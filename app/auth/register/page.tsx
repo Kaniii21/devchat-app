@@ -20,7 +20,7 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState("")
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const { register } = useAuth()
+  const { register, googleLogin, githubLogin } = useAuth()
   const router = useRouter()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -35,10 +35,36 @@ export default function RegisterPage() {
     setIsLoading(true)
 
     try {
-      await register(email, password, displayName)
+      await register(email, password, displayName || "") // Pass empty string if displayName is not provided
       router.push("/chat")
     } catch (err: any) {
       setError(err.message || "Failed to create an account")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleGoogleRegister = async () => {
+    setError("")
+    setIsLoading(true)
+    try {
+      await googleLogin()
+      router.push("/chat")
+    } catch (err: any) {
+      setError(err.message || "Google registration failed")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleGithubRegister = async () => {
+    setError("")
+    setIsLoading(true)
+    try {
+      await githubLogin()
+      router.push("/chat")
+    } catch (err: any) {
+      setError(err.message || "Github registration failed")
     } finally {
       setIsLoading(false)
     }
@@ -60,13 +86,12 @@ export default function RegisterPage() {
           )}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="name">Display Name</Label>
+              <Label htmlFor="name">Display Name (optional)</Label>
               <Input
                 id="name"
                 placeholder="John Doe"
                 value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                required
+                onChange={(e) => setDisplayName(e.target.value)}              
               />
             </div>
             <div className="space-y-2">
@@ -121,7 +146,7 @@ export default function RegisterPage() {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <Button variant="outline" type="button" disabled={isLoading}>
+            <Button variant="outline" type="button" disabled={isLoading} onClick={handleGoogleRegister}>
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="h-5 w-5 mr-2">
                 <path
                   d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -142,11 +167,11 @@ export default function RegisterPage() {
               </svg>
               Google
             </Button>
-            <Button variant="outline" type="button" disabled={isLoading}>
+           <Button variant="outline" type="button" disabled={isLoading} onClick={handleGithubRegister}>
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="h-5 w-5 mr-2 fill-current">
-                <path d="M22 12c0-5.523-4.477-10-10-10S2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.878v-6.987h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.988C18.343 21.128 22 16.991 22 12z" />
+                <path d="M12 2C6.477 2 2 6.477 2 12c0 4.991 3.186 9.277 7.627 10.937.562.104.775-.243.775-.544 0-.267-.01-1.14-.015-2.235-3.093.672-3.752-1.492-3.752-1.492-.507-1.285-1.235-1.624-1.235-1.624-1.012-.688.076-.673.076-.673 1.122.08 1.715 1.156 1.715 1.156 1.005 1.712 2.631 1.217 3.282.93.102-.722.393-1.216.714-1.497-2.505-.283-5.142-1.253-5.142-5.584 0-1.233.447-2.245 1.183-3.046-.119-.284-.514-1.44.112-3.012 0 0 .968-.305 3.159 1.168.917-.254 1.89-.382 2.86-.387.97.005 1.944.133 2.86.387 2.19-.47 3.157-1.168 3.157-1.168.627 1.572.231 2.728.113 3.012.737.8 1.182 1.813 1.182 3.046 0 4.342-2.64 5.3-5.154 5.578.405.35.765 1.035.765 2.085 0 1.505-.015 2.713-.015 3.075 0 .301.212.649.781.543 4.454-1.66 7.634-5.947 7.634-10.938C22 6.477 17.523 2 12 2z" />
               </svg>
-              Facebook
+              Github
             </Button>
           </div>
         </CardFooter>

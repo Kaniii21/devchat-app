@@ -1,194 +1,184 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect } from "react"
+import { createContext, useContext, useState, useEffect, useCallback } from "react"
 import { useAuth } from "./AuthContext"
-import { v4 as uuidv4 } from "uuid"
+import { initializeApp, getApps } from "firebase/app"
+import {
+  getFirestore,
+  collection,
+  query,
+  orderBy,
+  onSnapshot,
+  addDoc,
+  serverTimestamp,
+  doc,
+  setDoc,
+  limit,
+} from "firebase/firestore"
+
+// Initialize Firebase only if it hasn't been initialized already
+let app
+let db
+
+if (typeof window !== 'undefined') {
+  const firebaseConfig = {
+    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
+  }
+
+  if (!getApps().length) {
+    app = initializeApp(firebaseConfig)
+  } else {
+    app = getApps()[0]
+  }
+  db = getFirestore(app)
+}
 
 const ChatContext = createContext()
 
-export const useChat = () => {
-  return useContext(ChatContext)
-}
+export const useChat = () => useContext(ChatContext)
 
 export const ChatProvider = ({ children }) => {
   const { user } = useAuth()
   const [channels, setChannels] = useState([])
   const [currentChannel, setCurrentChannel] = useState(null)
   const [messages, setMessages] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loadingMessages, setLoadingMessages] = useState(true)
+  const [loadingChannels, setLoadingChannels] = useState(true)
   const [onlineUsers, setOnlineUsers] = useState([])
 
-  // Initialize default channels
+  // Fetch Channels
   useEffect(() => {
-    const defaultChannels = [
-      { id: "general", name: "general", description: "General discussion for all developers" },
-      { id: "javascript", name: "javascript", description: "JavaScript discussions and help" },
-      { id: "react", name: "react", description: "React framework discussions" },
-      { id: "python", name: "python", description: "Python programming language discussions" },
-      { id: "beginners", name: "beginners", description: "A friendly place for programming beginners" },
-    ]
+    if (!db || loadingChannels === false) return
 
-    setChannels(defaultChannels)
-    setCurrentChannel(defaultChannels[0])
-  }, [])
+    setLoadingChannels(true)
+    const channelsRef = collection(db, 'channels')
+    const q = query(channelsRef, orderBy('name', 'asc'))
 
-  // Load messages for current channel
+    const unsubscribe = onSnapshot(q, 
+      (snapshot) => {
+        const channelList = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+        setChannels(channelList)
+        
+        if (!currentChannel && channelList.length > 0) {
+          setCurrentChannel(channelList[0])
+        }
+        setLoadingChannels(false)
+      },
+      (error) => {
+        console.error("Error fetching channels:", error)
+        setLoadingChannels(false)
+      }
+    )
+
+    return unsubscribe
+  }, [currentChannel])
+
+  // Load Messages for Current Channel
   useEffect(() => {
-    if (!currentChannel || !user) return
+    if (!db || !currentChannel?.id || !user?.uid) {
+      setMessages([])
+      setLoadingMessages(false)
+      return
+    }
 
-    setLoading(true)
+    setLoadingMessages(true)
+    const messagesRef = collection(db, 'channels', currentChannel.id, 'messages')
+    const q = query(messagesRef, orderBy('timestamp', 'asc'), limit(50))
 
-    // In a real app, this would fetch from Firestore
-    // For demo purposes, we'll simulate messages
-    const simulatedMessages = [
-      {
-        id: uuidv4(),
-        sender: {
-          uid: "user1",
-          displayName: "Alice Johnson",
-          photoURL: "/placeholder.svg?height=40&width=40",
-          status: "online",
-        },
-        content: "Hey everyone! Has anyone used the new React Server Components?",
-        timestamp: new Date(Date.now() - 3600000).toISOString(),
-        type: "text",
+    const unsubscribe = onSnapshot(q, 
+      (snapshot) => {
+        const messageList = snapshot.docs.map(doc => {
+          const data = doc.data()
+          return {
+            id: doc.id,
+            ...data,
+            timestamp: data.timestamp?.toDate?.()?.toISOString() || new Date().toISOString()
+          }
+        })
+        setMessages(messageList)
+        setLoadingMessages(false)
       },
-      {
-        id: uuidv4(),
-        sender: {
-          uid: "user2",
-          displayName: "Bob Smith",
-          photoURL: "/placeholder.svg?height=40&width=40",
-          status: "online",
-        },
-        content: "Yes, I've been experimenting with them. They're pretty cool!",
-        timestamp: new Date(Date.now() - 3500000).toISOString(),
-        type: "text",
-      },
-      {
-        id: uuidv4(),
-        sender: {
-          uid: "user3",
-          displayName: "Charlie Davis",
-          photoURL: "/placeholder.svg?height=40&width=40",
-          status: "away",
-        },
-        content: "Here's a simple example:",
-        timestamp: new Date(Date.now() - 3400000).toISOString(),
-        type: "text",
-      },
-      {
-        id: uuidv4(),
-        sender: {
-          uid: "user3",
-          displayName: "Charlie Davis",
-          photoURL: "/placeholder.svg?height=40&width=40",
-          status: "away",
-        },
-        content: `// server-component.jsx
-export default async function ServerComponent() {
-  const data = await fetchSomeData();
-  
-  return (
-    <div>
-      <h1>Server Component</h1>
-      <pre>{JSON.stringify(data, null, 2)}</pre>
-    </div>
-  );
-}`,
-        timestamp: new Date(Date.now() - 3300000).toISOString(),
-        type: "code",
-        language: "jsx",
-      },
-      {
-        id: uuidv4(),
-        sender: {
-          uid: user?.uid || "anonymous",
-          displayName: user?.displayName || "You",
-          photoURL: user?.photoURL || "/placeholder.svg?height=40&width=40",
-          status: "online",
-        },
-        content: "Thanks for sharing! I'm still learning how to use them effectively.",
-        timestamp: new Date(Date.now() - 1800000).toISOString(),
-        type: "text",
-      },
-    ]
+      (error) => {
+        console.error(`Error fetching messages for ${currentChannel.id}:`, error)
+        setLoadingMessages(false)
+      }
+    )
 
-    // Simulate loading delay
-    setTimeout(() => {
-      setMessages(simulatedMessages)
-      setLoading(false)
-    }, 1000)
-
-    // Simulate online users
     setOnlineUsers([
       { uid: "user1", displayName: "Alice Johnson", status: "online" },
-      { uid: "user2", displayName: "Bob Smith", status: "online" },
-      { uid: "user3", displayName: "Charlie Davis", status: "away" },
       { uid: user.uid, displayName: user.displayName || "You", status: "online" },
     ])
 
-    // In a real app, you would use Firestore listeners
-    // const messagesRef = collection(db, 'channels', currentChannel.id, 'messages');
-    // const q = query(messagesRef, orderBy('timestamp', 'asc'));
+    return unsubscribe
+  }, [currentChannel?.id, user?.uid])
 
-    // const unsubscribe = onSnapshot(q, (snapshot) => {
-    //   const messageList = [];
-    //   snapshot.forEach((doc) => {
-    //     messageList.push({ id: doc.id, ...doc.data() });
-    //   });
-    //   setMessages(messageList);
-    //   setLoading(false);
-    // });
-
-    // return () => unsubscribe();
-  }, [currentChannel, user])
-
-  // Send a message
-  const sendMessage = async (messageData) => {
-    if (!currentChannel || !user) return
-
-    const newMessage = {
-      id: uuidv4(),
-      sender: {
-        uid: user.uid,
-        displayName: user.displayName || "Anonymous",
-        photoURL: user.photoURL || "/placeholder.svg?height=40&width=40",
-        status: "online",
-      },
-      ...messageData,
-      timestamp: new Date().toISOString(),
+  // Send a Message
+  const sendMessage = useCallback(async (messageData) => {
+    if (!db || !currentChannel?.id || !user?.uid) {
+      throw new Error("Cannot send message: No current channel or user.")
     }
 
-    // In a real app, this would save to Firestore
-    // await addDoc(collection(db, 'channels', currentChannel.id, 'messages'), {
-    //   ...newMessage,
-    //   timestamp: serverTimestamp()
-    // });
+    const messagesRef = collection(db, 'channels', currentChannel.id, 'messages')
 
-    // For demo purposes, we'll just add it to the local state
-    setMessages((prevMessages) => [...prevMessages, newMessage])
-  }
+    try {
+      await addDoc(messagesRef, {
+        sender: {
+          uid: user.uid,
+          displayName: user.displayName || "Anonymous",
+          photoURL: user.photoURL || "/placeholder.svg?height=40&width=40",
+        },
+        content: messageData.content,
+        type: messageData.type || "text",
+        language: messageData.language || null,
+        timestamp: serverTimestamp(),
+      })
+    } catch (error) {
+      console.error("Error sending message:", error)
+      throw error
+    }
+  }, [currentChannel?.id, user])
 
-  // Create a new channel
-  const createChannel = (channelData) => {
-    const newChannel = {
-      id: channelData.name.toLowerCase().replace(/\s+/g, "-"),
-      ...channelData,
+  // Create a New Channel
+  const createChannel = useCallback(async (channelData) => {
+    if (!db || !channelData?.name || !channelData?.description) {
+      throw new Error("Channel name and description are required")
     }
 
-    // In a real app, this would save to Firestore
-    // For demo purposes, we'll just add it to the local state
-    setChannels((prevChannels) => [...prevChannels, newChannel])
-    setCurrentChannel(newChannel)
-  }
+    const channelId = channelData.name
+      .toLowerCase()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9-]/g, '')
+    
+    const channelRef = doc(db, 'channels', channelId)
+
+    try {
+      await setDoc(channelRef, {
+        name: channelData.name,
+        description: channelData.description,
+        createdAt: serverTimestamp(),
+        createdBy: user?.uid || 'unknown',
+      })
+      return channelId
+    } catch (error) {
+      console.error("Error creating channel:", error)
+      throw error
+    }
+  }, [user?.uid])
 
   const value = {
     channels,
     currentChannel,
     setCurrentChannel,
     messages,
-    loading,
+    loading: loadingChannels || loadingMessages,
     onlineUsers,
     sendMessage,
     createChannel,
