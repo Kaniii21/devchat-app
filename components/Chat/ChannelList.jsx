@@ -1,11 +1,11 @@
-"use client"
+"use client";
 
-import React from "react"
-import { useChat } from "@/context/ChatContext"
-import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Hash, Plus } from "lucide-react"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import React, { useState, useEffect } from "react";
+import { useChat } from "@/context/ChatContext";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Hash, Plus } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -14,29 +14,53 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { getFirestore, collection, getDocs, addDoc } from "firebase/firestore";
+import { app } from "@/services/firebase";
 
 const ChannelList = () => {
-  const { channels, currentChannel, setCurrentChannel, createChannel } = useChat()
-  const [isCreatingChannel, setIsCreatingChannel] = React.useState(false)
-  const [newChannelName, setNewChannelName] = React.useState("")
-  const [newChannelDescription, setNewChannelDescription] = React.useState("")
+  const { currentChannel, setCurrentChannel } = useChat();
+  const [channels, setChannels] = useState([]);
+  const [isCreatingChannel, setIsCreatingChannel] = useState(false);
+  const [newChannelName, setNewChannelName] = useState("");
+  const [newChannelDescription, setNewChannelDescription] = useState("");
+  const db = getFirestore(app);
 
-  const handleCreateChannel = (e) => {
-    e.preventDefault()
+  // Fetch channels from Firestore
+  useEffect(() => {
+    const fetchChannels = async () => {
+      const querySnapshot = await getDocs(collection(db, "channels"));
+      const channelData = querySnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setChannels(channelData);
+    };
+
+    fetchChannels();
+  }, []);
+
+  const handleCreateChannel = async (e) => {
+    e.preventDefault();
     if (newChannelName.trim()) {
-      createChannel({
-        name: newChannelName.trim(),
-        description: newChannelDescription.trim(),
-      })
-      setNewChannelName("")
-      setNewChannelDescription("")
-      setIsCreatingChannel(false)
+      try {
+        const newChannel = {
+          name: newChannelName.trim(),
+          description: newChannelDescription.trim(),
+        };
+        const docRef = await addDoc(collection(db, "channels"), newChannel);
+        setChannels([...channels, { id: docRef.id, ...newChannel }]); // Update local state
+        setNewChannelName("");
+        setNewChannelDescription("");
+        setIsCreatingChannel(false);
+      } catch (error) {
+        console.error("Error creating channel:", error);
+      }
     }
-  }
+  };
 
   return (
     <div className="py-2">
@@ -111,7 +135,7 @@ const ChannelList = () => {
         </div>
       </ScrollArea>
     </div>
-  )
-}
+  );
+};
 
-export default ChannelList
+export default ChannelList;

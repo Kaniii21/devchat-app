@@ -1,22 +1,46 @@
 "use client"
 
-import { useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useEffect, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { CheckCircle2 } from "lucide-react"
 import { useAuth } from "@/context/AuthContext"
 
+interface PaymentDetails {
+  id: string
+  amount: number
+  date: string
+  last4: string
+}
+
 export default function DonationSuccessPage() {
   const { user, loading } = useAuth()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const [paymentDetails, setPaymentDetails] = useState<PaymentDetails | null>(null)
 
   useEffect(() => {
-    if (!loading && !user) {
+    // Check for payment_intent_client_secret in URL to verify it's a redirect from Stripe
+    const isStripeRedirect = searchParams.get("payment_intent_client_secret")
+    
+    // Only redirect to login if not loading, no user, and not a Stripe redirect
+    if (!loading && !user && !isStripeRedirect) {
       router.push("/auth/login")
+      return
     }
-  }, [user, loading, router])
+
+    // Try to get payment details from session storage
+    try {
+      const storedDetails = sessionStorage.getItem("paymentDetails")
+      if (storedDetails) {
+        setPaymentDetails(JSON.parse(storedDetails))
+      }
+    } catch (error) {
+      console.error("Error reading payment details:", error)
+    }
+  }, [user, loading, router, searchParams])
 
   if (loading) {
     return (
@@ -24,10 +48,6 @@ export default function DonationSuccessPage() {
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
       </div>
     )
-  }
-
-  if (!user) {
-    return null
   }
 
   return (
@@ -47,18 +67,30 @@ export default function DonationSuccessPage() {
           <div className="rounded-lg bg-muted p-4">
             <p className="font-medium">Transaction Details</p>
             <div className="mt-2 text-sm text-muted-foreground">
-              <div className="flex justify-between py-1">
-                <span>Transaction ID:</span>
-                <span>DCH-{Math.random().toString(36).substring(2, 10).toUpperCase()}</span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span>Date:</span>
-                <span>{new Date().toLocaleDateString()}</span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span>Payment Method:</span>
-                <span>Credit Card</span>
-              </div>
+              {paymentDetails ? (
+                <>
+                  <div className="flex justify-between py-1">
+                    <span>Transaction ID:</span>
+                    <span>{paymentDetails.id}</span>
+                  </div>
+                  <div className="flex justify-between py-1">
+                    <span>Amount:</span>
+                    <span>${paymentDetails.amount}</span>
+                  </div>
+                  <div className="flex justify-between py-1">
+                    <span>Date:</span>
+                    <span>{new Date(paymentDetails.date).toLocaleDateString()}</span>
+                  </div>
+                  <div className="flex justify-between py-1">
+                    <span>Card:</span>
+                    <span>•••• {paymentDetails.last4}</span>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-2">
+                  Payment successful! Thank you for your donation.
+                </div>
+              )}
             </div>
           </div>
           <p className="text-sm">A receipt has been sent to your email address.</p>
