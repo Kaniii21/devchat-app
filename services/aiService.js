@@ -1,91 +1,244 @@
-// This is a simplified mock of an AI service for code analysis
-const analyzeCode = async (code, language) => {
-  // Simulate API call delay
-  await new Promise((resolve) => setTimeout(resolve, 2000))
+// AI-powered code analysis service for debugging and suggestions
+import { languagePatterns } from './languagePatterns';
 
-  // For demo purposes, we'll return mock analysis based on the code content
-  const hasErrors = code.includes("error") || code.includes("undefined") || code.includes("null")
-  const hasBestPractices = code.includes("function") || code.includes("const") || code.includes("let")
+/**
+ * Analyzes code snippets for issues, suggestions, and generates fixes
+ * @param {string} code - The code snippet to analyze
+ * @param {string} language - The programming language of the code
+ * @returns {Object} Analysis results including issues, suggestions, and fixed code
+ */
+const analyzeCode = async (code, language = 'javascript') => {
+  // Simulate API call delay (for demo purposes)
+  await new Promise((resolve) => setTimeout(resolve, 1000));
 
-  // Generate mock analysis
-  const analysis = {
-    issues: [],
-    suggestions: [],
-    fixedCode: null,
-  }
+  try {
+    // Get language-specific patterns
+    const patterns = languagePatterns[language.toLowerCase()] || languagePatterns.javascript;
+    
+    // Initialize analysis result
+    const analysis = {
+      issues: [],
+      suggestions: [],
+      fixedCode: null,
+    };
 
-  // Add mock issues based on code content
-  if (hasErrors) {
-    analysis.issues.push({
-      severity: "error",
-      title: "Potential undefined variable",
-      description: "There might be undefined variables in your code that could cause runtime errors.",
-      location: "Line 3",
-    })
-  }
-
-  if (code.includes("var ")) {
-    analysis.issues.push({
-      severity: "warning",
-      title: "Use of var keyword",
-      description: "Consider using const or let instead of var for better scoping.",
-      location: "Throughout code",
-    })
-  }
-
-  if (code.length > 100 && !code.includes("//")) {
-    analysis.issues.push({
-      severity: "info",
-      title: "Missing comments",
-      description: "Adding comments to your code will make it more maintainable.",
-      location: "Throughout code",
-    })
-  }
-
-  // Add mock suggestions
-  if (language === "javascript" || language === "typescript") {
-    analysis.suggestions.push({
-      title: "Use arrow functions for callbacks",
-      description: "Arrow functions provide a more concise syntax and lexically bind the this value.",
-      example: 'const handleClick = () => {\n  console.log("Clicked");\n};',
-    })
-  }
-
-  if (hasBestPractices) {
-    analysis.suggestions.push({
-      title: "Destructure objects for cleaner code",
-      description: "Use object destructuring to make your code more readable.",
-      example: "const { name, age } = user;",
-    })
-  }
-
-  // Generate fixed code if there are issues
-  if (analysis.issues.length > 0) {
-    // Simple mock fix: replace var with const, add comments
-    let fixedCode = code
-
-    if (code.includes("var ")) {
-      fixedCode = fixedCode.replace(/var /g, "const ")
+    // Skip analysis for empty code
+    if (!code || code.trim() === '') {
+      return {
+        issues: [{
+          severity: "info",
+          title: "Empty code snippet",
+          description: "There is no code to analyze.",
+          location: "N/A",
+        }],
+        suggestions: [],
+        fixedCode: null,
+      };
     }
 
-    if (code.length > 100 && !code.includes("//")) {
-      fixedCode = "// Main function\n" + fixedCode
+    // Check for common issues
+    analyzeCommonIssues(code, language, patterns, analysis);
+    
+    // Add language-specific suggestions
+    addLanguageSpecificSuggestions(code, language, patterns, analysis);
+    
+    // Generate fixed code if there are issues
+    if (analysis.issues.length > 0) {
+      analysis.fixedCode = generateFixedCode(code, language, patterns, analysis.issues);
     }
 
-    if (hasErrors) {
-      // Mock fix for undefined variables
-      if (code.includes("undefined")) {
-        fixedCode = fixedCode.replace("undefined", '""')
-      }
-      if (code.includes("null")) {
-        fixedCode = fixedCode.replace("null", "{}")
-      }
-    }
-
-    analysis.fixedCode = fixedCode
+    return analysis;
+  } catch (error) {
+    console.error("Error analyzing code:", error);
+    throw new Error("Failed to analyze code. Please try again.");
   }
+};
 
-  return analysis
+/**
+ * Analyzes code for common issues across programming languages
+ */
+function analyzeCommonIssues(code, language, patterns, analysis) {
+  const lines = code.split('\n');
+  
+  // Check for syntax errors
+  patterns.syntaxErrors.forEach(pattern => {
+    const regex = new RegExp(pattern.regex, 'g');
+    if (regex.test(code)) {
+      analysis.issues.push({
+        severity: "error",
+        title: pattern.title,
+        description: pattern.description,
+        location: findPatternLocation(code, regex),
+      });
+    }
+  });
+
+  // Check for potential bugs
+  patterns.potentialBugs.forEach(pattern => {
+    const regex = new RegExp(pattern.regex, 'g');
+    if (regex.test(code)) {
+      analysis.issues.push({
+        severity: "warning",
+        title: pattern.title,
+        description: pattern.description,
+        location: findPatternLocation(code, regex),
+      });
+    }
+  });
+
+  // Check code style and best practices
+  patterns.styleIssues.forEach(pattern => {
+    const regex = new RegExp(pattern.regex, 'g');
+    if (regex.test(code)) {
+      analysis.issues.push({
+        severity: "info",
+        title: pattern.title,
+        description: pattern.description,
+        location: findPatternLocation(code, regex),
+      });
+    }
+  });
+  
+  // Check for missing comments
+  if (lines.length > 5) {
+    const commentCount = lines.filter(line => 
+      patterns.commentPatterns.some(pattern => line.trim().match(pattern))
+    ).length;
+    
+    if (commentCount === 0) {
+      analysis.issues.push({
+        severity: "info",
+        title: "Missing comments",
+        description: "Adding comments to your code will make it more maintainable.",
+        location: "Throughout code",
+      });
+    } else if (commentCount < lines.length / 10) {
+      analysis.issues.push({
+        severity: "info",
+        title: "Sparse comments",
+        description: "Consider adding more comments to explain complex logic.",
+        location: "Throughout code",
+      });
+    }
+  }
 }
 
-export { analyzeCode }
+/**
+ * Adds language-specific suggestions based on code analysis
+ */
+function addLanguageSpecificSuggestions(code, language, patterns, analysis) {
+  // Add general best practices
+  patterns.bestPractices.forEach(practice => {
+    analysis.suggestions.push({
+      title: practice.title,
+      description: practice.description,
+      example: practice.example,
+    });
+  });
+  
+  // Add performance suggestions if code is complex
+  if (code.length > 200 || code.split('\n').length > 20) {
+    patterns.performanceTips.forEach(tip => {
+      analysis.suggestions.push({
+        title: tip.title,
+        description: tip.description,
+        example: tip.example,
+      });
+    });
+  }
+  
+  // Add readability suggestions
+  patterns.readabilityTips.forEach(tip => {
+    const regex = new RegExp(tip.detectPattern, 'g');
+    if (regex.test(code)) {
+      analysis.suggestions.push({
+        title: tip.title,
+        description: tip.description,
+        example: tip.example,
+      });
+    }
+  });
+}
+
+/**
+ * Generates fixed code based on detected issues
+ */
+function generateFixedCode(code, language, patterns, issues) {
+  let fixedCode = code;
+  
+  // Apply fixes for detected issues
+  issues.forEach(issue => {
+    const matchingFix = patterns.fixes.find(fix => fix.issueTitle === issue.title);
+    if (matchingFix) {
+      const regex = new RegExp(matchingFix.pattern, 'g');
+      fixedCode = fixedCode.replace(regex, matchingFix.replacement);
+    }
+  });
+  
+  // Add missing comments if needed
+  if (issues.some(issue => issue.title === "Missing comments")) {
+    const lines = fixedCode.split('\n');
+    
+    // Add file header comment
+    fixedCode = patterns.commentPatterns[0] + ' Main code implementation\n' + fixedCode;
+    
+    // For longer files, add section comments
+    if (lines.length > 15) {
+      const commentedLines = [];
+      let inFunction = false;
+      let functionStartIndex = -1;
+      
+      lines.forEach((line, index) => {
+        // Add function comments
+        if (!inFunction && patterns.functionDefinition && line.match(patterns.functionDefinition)) {
+          inFunction = true;
+          functionStartIndex = index;
+          
+          // Extract function name
+          const functionNameMatch = line.match(patterns.functionNameExtraction);
+          const functionName = functionNameMatch ? functionNameMatch[1] : 'function';
+          
+          // Add function comment
+          commentedLines.push(patterns.commentPatterns[0] + ` ${functionName}: Add description here`);
+        }
+        
+        commentedLines.push(line);
+        
+        // Reset function flag
+        if (inFunction && line.includes('{')) {
+          inFunction = false;
+        }
+      });
+      
+      fixedCode = commentedLines.join('\n');
+    }
+  }
+  
+  return fixedCode;
+}
+
+/**
+ * Finds the location of a pattern in the code
+ */
+function findPatternLocation(code, regex) {
+  const lines = code.split('\n');
+  const match = code.match(regex);
+  
+  if (!match) return "Unknown";
+  
+  const position = match.index;
+  let charCount = 0;
+  let lineNumber = 0;
+  
+  for (let i = 0; i < lines.length; i++) {
+    charCount += lines[i].length + 1; // +1 for newline
+    if (charCount > position) {
+      lineNumber = i + 1;
+      break;
+    }
+  }
+  
+  return `Line ${lineNumber}`;
+}
+
+export { analyzeCode };

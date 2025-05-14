@@ -15,11 +15,20 @@ const ChatInterface = () => {
   const [codeSnippet, setCodeSnippet] = useState("")
   const [isCodeMode, setIsCodeMode] = useState(false)
   const [language, setLanguage] = useState("javascript")
+  const [showDebugger, setShowDebugger] = useState(false)
   const messagesEndRef = useRef(null)
+  const debuggerRef = useRef(null)
 
   useEffect(() => {
     scrollToBottom()
   }, [messages])
+
+  useEffect(() => {
+    // Hide debugger when code changes
+    if (showDebugger) {
+      setShowDebugger(false);
+    }
+  }, [codeSnippet, language]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -35,6 +44,7 @@ const ChatInterface = () => {
         language,
       })
       setCodeSnippet("")
+      setShowDebugger(false)
     } else if (messageText.trim()) {
       sendMessage({
         type: "text",
@@ -48,6 +58,15 @@ const ChatInterface = () => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       handleSendMessage(e)
+    }
+  }
+
+  const handleDebugClick = () => {
+    if (codeSnippet.trim()) {
+      setShowDebugger(true);
+      setTimeout(() => {
+        debuggerRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 100);
     }
   }
 
@@ -153,12 +172,7 @@ const ChatInterface = () => {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => {
-                    const debuggerElement = document.getElementById("ai-debugger")
-                    if (debuggerElement) {
-                      debuggerElement.scrollIntoView({ behavior: "smooth" })
-                    }
-                  }}
+                  onClick={handleDebugClick}
                   disabled={!codeSnippet.trim()}
                 >
                   <Sparkles className="h-4 w-4 mr-2" />
@@ -171,8 +185,8 @@ const ChatInterface = () => {
               </div>
             </div>
 
-            {codeSnippet.trim() && (
-              <div id="ai-debugger" className="mt-4">
+            {showDebugger && codeSnippet.trim() && (
+              <div ref={debuggerRef} className="mt-4">
                 <AIDebugger code={codeSnippet} language={language} />
               </div>
             )}

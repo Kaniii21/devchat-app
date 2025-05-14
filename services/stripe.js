@@ -1,4 +1,5 @@
-import { db, collection, addDoc, query, where, orderBy, getDocs } from "../services/firebase"
+import { db } from "../services/firebase"
+import { collection, addDoc, query, where, orderBy, getDocs } from "firebase/firestore"
 
 // Helper function to format amount in cents for Stripe
 export const formatAmountForStripe = (amount, currency) => {

@@ -12,7 +12,7 @@ import {
   GoogleAuthProvider,
   updateProfile as firebaseUpdateProfile,
 } from "firebase/auth"
-import { auth,app } from "@/services/firebase"
+import { auth, app } from "@/services/firebase"
 
 const AuthContext = createContext()
 
@@ -23,17 +23,32 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const db = getFirestore(app);
   const [user, setUser] = useState(null)
+  const [authUser, setAuthUser] = useState(null) // Keep track of the actual Firebase auth user
   const [loading, setLoading] = useState(true)
 
   const getUserData = async (uid) => {
+    console.log("Attempting to fetch user data for uid:", uid);
     const userDocRef = doc(db, "users", uid);
-    const userDocSnap = await getDoc(userDocRef);
-
-    if (userDocSnap.exists()) {
-      return userDocSnap.data();
-    } else {
-      console.log("No such document!");
-      return null;
+    try {
+      const userDocSnap = await getDoc(userDocRef);
+      console.log("User doc snapshot exists:", userDocSnap.exists());
+      if (userDocSnap.exists()) {
+        const data = userDocSnap.data();
+        
+        // Check if we have an avatarImage in Firestore and use it for photoURL if exists
+        if (data.avatarImage && !data.photoURL) {
+          data.photoURL = data.avatarImage;
+        }
+        
+        console.log("Retrieved user data:", { ...data, uid });
+        return data;
+      } else {
+        console.log("No user document found!");
+        return null;
+      }
+    } catch (error) {
+      console.error("Error fetching user document:", error);
+      throw error;
     }
   };
 
@@ -43,6 +58,8 @@ export const AuthProvider = ({ children }) => {
       const provider = new GoogleAuthProvider();
       const userCredential = await signInWithPopup(auth, provider);
       const userData = userCredential.user;
+      setAuthUser(userData); // Save auth user
+
       const userDocRef = doc(db, "users", userData.uid);
       const userDocSnap = await getDoc(userDocRef);
       if (!userDocSnap.exists()) {
@@ -53,34 +70,34 @@ export const AuthProvider = ({ children }) => {
           isAdmin: false,
         });
       }
-        const userDataFromDb = await getUserData(userData.uid)
-        setUser(userDataFromDb)
-      }
-     catch (error) {
+      const userDataFromDb = await getUserData(userData.uid)
+      setUser(userDataFromDb)
+    } catch (error) {
       throw error
     }
   }
 
   // Github Login
-
   const githubLogin = async () => {
     try {
-        const provider = new GithubAuthProvider()
-        const userCredential = await signInWithPopup(auth, provider);
-        const userData = userCredential.user;
-        const userDocRef = doc(db, "users", userData.uid);
-        const userDocSnap = await getDoc(userDocRef);
-        if (!userDocSnap.exists()) {
-          await setDoc(userDocRef, {
-            uid: userData.uid,
-            email: userData.email,
-            displayName: userData.displayName,
-            isAdmin: false,
-          });
-        }
-        setUser(await getUserData(userData.uid))
+      const provider = new GithubAuthProvider()
+      const userCredential = await signInWithPopup(auth, provider);
+      const userData = userCredential.user;
+      setAuthUser(userData); // Save auth user
+
+      const userDocRef = doc(db, "users", userData.uid);
+      const userDocSnap = await getDoc(userDocRef);
+      if (!userDocSnap.exists()) {
+        await setDoc(userDocRef, {
+          uid: userData.uid,
+          email: userData.email,
+          displayName: userData.displayName,
+          isAdmin: false,
+        });
+      }
+      setUser(await getUserData(userData.uid))
     } catch (error) {
-        throw error
+      throw error
     }
   }
 
@@ -88,22 +105,24 @@ export const AuthProvider = ({ children }) => {
   const register = async (email, password, displayName) => {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password)
+      const currentUser = userCredential.user;
+      setAuthUser(currentUser); // Save auth user
 
       // Update the user profile with display name
-      if (userCredential.user) {
-        displayName && await firebaseUpdateProfile(userCredential.user, {
+      if (currentUser) {
+        displayName && await firebaseUpdateProfile(currentUser, {
           displayName: displayName,
         })
       }
-      const userDocRef = doc(db, "users", userCredential.user.uid);
+      const userDocRef = doc(db, "users", currentUser.uid);
       await setDoc(userDocRef, {
-        uid: userCredential.user.uid,
+        uid: currentUser.uid,
         email: email,
         displayName: displayName,
         isAdmin: false,
       });
 
-      return userCredential.user
+      return currentUser
     } catch (error) {
       throw error
     }
@@ -113,12 +132,15 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const userDataFromDb = await getUserData(userCredential.user.uid);
+      const currentUser = userCredential.user;
+      setAuthUser(currentUser); // Save auth user
+
+      const userDataFromDb = await getUserData(currentUser.uid);
       setUser({
         ...userDataFromDb,
-        uid: userCredential.user.uid
+        uid: currentUser.uid
       });
-      return userCredential.user
+      return currentUser
     } catch (error) {
       throw error
     }
@@ -128,6 +150,7 @@ export const AuthProvider = ({ children }) => {
   const logout = async () => {
     try {
       await signOut(auth)
+      setAuthUser(null);
     } catch (error) {
       throw error
     }
@@ -135,20 +158,58 @@ export const AuthProvider = ({ children }) => {
 
   // Listen for auth state changes
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    console.log("Setting up auth state listener");
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      console.log("Auth state changed. Current user:", currentUser?.uid);
+      setAuthUser(currentUser); // Save the Firebase auth user object
+      
       if (currentUser) {
-        getUserData(currentUser.uid).then((userData) => {
-          setUser(userData);
-        });
+        try {
+          console.log("Fetching user data from Firestore");
+          const userData = await getUserData(currentUser.uid);
+          
+          // Create the user object with data from both auth and Firestore
+          const updatedUser = {
+            ...userData,
+            uid: currentUser.uid,
+            email: currentUser.email,
+            displayName: currentUser.displayName || userData?.displayName,
+            // Use avatarImage for display but keep it separate from auth photoURL
+            photoURL: userData?.avatarImage || currentUser.photoURL,
+            // Keep track of original auth photoURL separately
+            authPhotoURL: currentUser.photoURL
+          };
+          console.log("Setting user state with:", updatedUser);
+          setUser(updatedUser);
+        } catch (error) {
+          console.error("Error in auth state change:", error);
+          // Set basic user data if database fetch fails
+          const basicUser = {
+            uid: currentUser.uid,
+            email: currentUser.email,
+            displayName: currentUser.displayName,
+            photoURL: currentUser.photoURL,
+            isAdmin: false,
+          };
+          console.log("Setting basic user state:", basicUser);
+          setUser(basicUser);
+        }
+      } else {
+        console.log("No current user, setting user state to null");
+        setUser(null);
       }
-      setLoading(false)
-    })
+      setLoading(false);
+    });
 
-    return () => unsubscribe()
-  }, [])
+    return () => {
+      console.log("Cleaning up auth state listener");
+      unsubscribe();
+    };
+  }, []);
 
   const value = {
     user,
+    authUser, // Include the auth user in the context
     loading,
     isAdmin: user?.isAdmin,
     register,

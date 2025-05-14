@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { AlertCircle, CheckCircle, Loader2 } from "lucide-react"
+import { AlertCircle, CheckCircle, Loader2, Zap } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { analyzeCode } from "@/services/aiService"
 import CodeSnippet from "./CodeSnippet"
@@ -13,15 +13,31 @@ const AIDebugger = ({ code, language }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [analysis, setAnalysis] = useState(null)
   const [error, setError] = useState(null)
+  const [activeTab, setActiveTab] = useState("issues")
+
+  // Auto-analyze when the component mounts
+  useEffect(() => {
+    if (code && !analysis && !isAnalyzing) {
+      handleAnalyze();
+    }
+  }, []);
 
   const handleAnalyze = async () => {
     setIsAnalyzing(true)
     setError(null)
 
     try {
+      console.log("Analyzing code:", { code: code.substring(0, 50) + "...", language });
       const result = await analyzeCode(code, language)
+      console.log("Analysis result:", result);
       setAnalysis(result)
+      
+      // Auto-switch to suggestions tab if no issues found
+      if (result.issues.length === 0 && result.suggestions.length > 0) {
+        setActiveTab("suggestions");
+      }
     } catch (err) {
+      console.error("Error analyzing code:", err);
       setError(err.message || "Failed to analyze code")
     } finally {
       setIsAnalyzing(false)
@@ -34,27 +50,15 @@ const AIDebugger = ({ code, language }) => {
     setError(null)
   }, [code, language])
 
+  const handleTabChange = (value) => {
+    setActiveTab(value);
+  };
+
   return (
-    <Card>
-      <CardHeader>
+    <Card className="border-primary/20">
+      <CardHeader className="pb-3">
         <CardTitle className="text-lg flex items-center">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="h-5 w-5 mr-2 text-primary"
-          >
-            <path d="M12 8V4H8" />
-            <rect width="16" height="12" x="4" y="8" rx="2" />
-            <path d="M2 14h2" />
-            <path d="M20 14h2" />
-            <path d="M15 13v2" />
-            <path d="M9 13v2" />
-          </svg>
+          <Zap className="h-5 w-5 mr-2 text-primary" />
           AI Code Assistant
         </CardTitle>
         <CardDescription>Get AI-powered analysis and suggestions for your code</CardDescription>
@@ -86,10 +90,24 @@ const AIDebugger = ({ code, language }) => {
         )}
 
         {analysis && (
-          <Tabs defaultValue="issues">
+          <Tabs defaultValue={activeTab} value={activeTab} onValueChange={handleTabChange}>
             <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="issues">Issues</TabsTrigger>
-              <TabsTrigger value="suggestions">Suggestions</TabsTrigger>
+              <TabsTrigger value="issues" className="relative">
+                Issues
+                {analysis.issues.length > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full text-xs font-bold h-5 w-5 flex items-center justify-center">
+                    {analysis.issues.length}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="suggestions" className="relative">
+                Suggestions
+                {analysis.suggestions.length > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-blue-500 text-white rounded-full text-xs font-bold h-5 w-5 flex items-center justify-center">
+                    {analysis.suggestions.length}
+                  </span>
+                )}
+              </TabsTrigger>
               <TabsTrigger value="fixed">Fixed Code</TabsTrigger>
             </TabsList>
 
@@ -103,7 +121,17 @@ const AIDebugger = ({ code, language }) => {
               ) : (
                 <div className="space-y-4">
                   {analysis.issues.map((issue, index) => (
-                    <Alert key={index} variant={issue.severity === "error" ? "destructive" : "default"}>
+                    <Alert 
+                      key={index} 
+                      variant={
+                        issue.severity === "error" ? "destructive" : 
+                        issue.severity === "warning" ? "default" : 
+                        "outline"
+                      }
+                      className={
+                        issue.severity === "info" ? "bg-blue-50 border-blue-200" : ""
+                      }
+                    >
                       <AlertCircle className="h-4 w-4" />
                       <AlertTitle>{issue.title}</AlertTitle>
                       <AlertDescription className="mt-2">
@@ -129,11 +157,11 @@ const AIDebugger = ({ code, language }) => {
               ) : (
                 <div className="space-y-4">
                   {analysis.suggestions.map((suggestion, index) => (
-                    <div key={index} className="border rounded-lg p-4">
-                      <h3 className="font-medium mb-2">{suggestion.title}</h3>
+                    <div key={index} className="border rounded-lg p-4 hover:bg-accent/50 transition-colors">
+                      <h3 className="font-medium mb-2 text-primary">{suggestion.title}</h3>
                       <p className="text-sm text-muted-foreground mb-3">{suggestion.description}</p>
                       {suggestion.example && (
-                        <div className="mt-2">
+                        <div className="mt-2 bg-muted p-2 rounded">
                           <p className="text-sm font-medium mb-1">Example:</p>
                           <CodeSnippet code={suggestion.example} language={language} />
                         </div>
@@ -150,7 +178,21 @@ const AIDebugger = ({ code, language }) => {
                   <p className="text-sm text-muted-foreground mb-3">
                     Here's an improved version of your code with fixes applied:
                   </p>
-                  <CodeSnippet code={analysis.fixedCode} language={language} />
+                  <div className="border rounded p-1">
+                    <CodeSnippet code={analysis.fixedCode} language={language} />
+                  </div>
+                  <div className="mt-4">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        navigator.clipboard.writeText(analysis.fixedCode);
+                        alert("Fixed code copied to clipboard!");
+                      }}
+                    >
+                      Copy Fixed Code
+                    </Button>
+                  </div>
                 </div>
               ) : (
                 <Alert>
